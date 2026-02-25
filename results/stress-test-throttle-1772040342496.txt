@@ -1,0 +1,260 @@
+在 2025 年的 React 开发环境中，性能优化更侧重于 **并发模式兼容性**、**闭包陷阱避免** 以及 **Tree-shaking 友好性**。
+
+虽然可以直接使用 Lodash，但手写 `useThrottle` 能更好地理解 React 渲染机制，并减少不必要的依赖。
+
+以下是基于现代 React 标准（React 18/19+）实现的 `useThrottle` Hook 及其完整的 TypeScript 测试用例。
+
+### 1. 实现思路
+
+我们将实现 `useThrottleFn` (节流函数)，这是最通用的形式。
+*   **核心痛点**：普通闭包会导致节流函数内部读取到旧的 State（Stale Closures）。
+*   **解决方案**：使用 `useRef` 始终指向最新的函数引用，确保节流逻辑执行时调用的是最新的状态。
+*   **清理机制**：在组件卸载时取消挂起的定时器，防止内存泄漏（React 18 Strict Mode 下尤为重要）。
+
+### 2. 代码实现
+
+```typescript
+import { useCallback, useEffect, useRef } from 'react';
+
+type ThrottledFunction<T extends any[]> = (...args: T) => void;
+
+interface ThrottleOptions {
+  delay?: number;
+  leading?: boolean; // 是否在延迟开始前立即调用
+  trailing?: boolean; // 是否在延迟结束后调用
+}
+
+/**
+ * useThrottle - 用于节流函数调用的 Hook
+ * @param fn 需要节流的函数
+ * @param delay 节流延迟时间 (ms)，默认 300ms
+ * @param options 配置项 { leading: true, trailing: true }
+ */
+export function useThrottle<T extends any[]>(
+  fn: (...args: T) => any,
+  delay: number = 300,
+  options: ThrottleOptions = {}
+): ThrottledFunction<T> {
+  const { leading = true, trailing = true } = options;
+
+  // 1. 使用 ref 存储最新的函数引用，避免闭包陷阱
+  const fnRef = useRef(fn);
+  
+  // 2. 更新 fnRef，确保每次渲染后 fnRef.current 都是最新的
+  useEffect(() => {
+    fnRef.current = fn;
+  }, [fn]);
+
+  // 3. 用于管理定时器和状态的 Refs
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastArgsRef = useRef<T | null>(null);
+  const lastCallTimeRef = useRef<number>(0);
+
+  // 4. 清除定时器的副作用（组件卸载或 delay 变化时执行）
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+      }
+    };
+  }, [delay]);
+
+  const throttledFn = useCallback(
+    (...args: T) => {
+      const now = Date.now();
+      // 立即执行逻辑 (Leading edge)
+      // 如果是第一次调用或者超过了延迟时间，且配置了 leading，则立即执行
+      const shouldCallNow = leading && (now - lastCallTimeRef.current >= delay);
+
+      if (shouldCallNow) {
+        fnRef.current(...args);
+        lastCallTimeRef.current = now;
+      } else {
+        // 记录参数，用于 trailing 调用
+        lastArgsRef.current = args;
+      }
+
+      // 如果已有定时器在运行，不重复创建（节流核心）
+      if (timerRef.current) return;
+
+      // 设置定时器，用于 trailing 调用或重置状态
+      timerRef.current = setTimeout(() => {
+        const hasRemainingCalls = trailing && lastArgsRef.current;
+        
+        if (hasRemainingCalls) {
+          fnRef.current(...lastArgsRef.current);
+          lastCallTimeRef.current = Date.now();
+        }
+        
+        timerRef.current = null;
+        lastArgsRef.current = null;
+      }, delay);
+    },
+    [delay, leading, trailing]
+  );
+
+  return throttledFn;
+}
+```
+
+---
+
+### 3. 测试用例
+
+为了确保 Hook 的健壮性，我们使用 `vitest` 或 `jest` 配合 `@testing-library/react` 进行测试。2025 年的标准测试库通常是 Vitest。
+
+**测试文件：`useThrottle.test.ts`**
+
+```typescript
+import { renderHook, act } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { useThrottle } from './useThrottle';
+
+describe('useThrottle', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('should call the function immediately if leading is true (default)', () => {
+    const callback = vi.fn();
+    const { result } = renderHook(() => useThrottle(callback, 100));
+
+    // 第一次调用应该立即执行
+    act(() => {
+      result.current('first');
+    });
+
+    expect(callback).toHaveBeenCalledTimes(1);
+    expect(callback).toHaveBeenCalledWith('first');
+  });
+
+  it('should throttle subsequent calls', () => {
+    const callback = vi.fn();
+    const { result } = renderHook(() => useThrottle(callback, 100));
+
+    // 1. 立即执行第一次
+    act(() => {
+      result.current('first');
+    });
+    expect(callback).toHaveBeenCalledTimes(1);
+
+    // 2. 在冷却时间内多次调用，不应执行
+    act(() => {
+      result.current('second');
+      result.current('third');
+    });
+    
+    expect(callback).toHaveBeenCalledTimes(1); // 依然是 1 次
+
+    // 3. 快进时间，触发 trailing call
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+
+    // 默认 trailing: true，所以最后一次调用会在延迟后执行
+    expect(callback).toHaveBeenCalledTimes(2);
+    expect(callback).toHaveBeenLastCalledWith('third');
+  });
+
+  it('should use the latest callback closure (stale closure test)', () => {
+    // 模拟一个计数器，验证节流函数内部是否拿到了最新的 state
+    let counter = 0;
+    const callback = vi.fn(() => console.log(counter));
+    
+    const { result, rerender } = renderHook(
+      ({ cb, delay }) => useThrottle(cb, delay),
+      { 
+        initialProps: { cb: callback, delay: 100 } 
+      }
+    );
+
+    // 第一次调用
+    act(() => {
+      result.current();
+    });
+    expect(callback).toHaveBeenCalledTimes(1);
+
+    // 改变外部状态并重新渲染 Hook
+    counter = 5;
+    rerender({ cb: callback, delay: 100 });
+
+    // 在节流期间再次调用
+    act(() => {
+      result.current();
+    });
+
+    // 推进时间
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+
+    // 验证最后一次调用确实发生了，且逻辑是最新的
+    expect(callback).toHaveBeenCalledTimes(2);
+  });
+
+  it('should NOT call trailing if trailing is false', () => {
+    const callback = vi.fn();
+    const { result } = renderHook(() => 
+      useThrottle(callback, 100, { trailing: false })
+    );
+
+    act(() => {
+      result.current('first'); // Leading call
+      result.current('second'); // Ignored
+    });
+
+    expect(callback).toHaveBeenCalledTimes(1);
+    expect(callback).toHaveBeenCalledWith('first');
+
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+
+    // 因为 trailing: false，所以冷却期结束不会调用 'second'
+    expect(callback).toHaveBeenCalledTimes(1);
+  });
+
+  it('should cancel pending calls on unmount', () => {
+    const callback = vi.fn();
+    const { result, unmount } = renderHook(() => useThrottle(callback, 100));
+
+    act(() => {
+      result.current('first');
+    });
+    
+    // 此时有一个 trailing 定时器在等待
+    act(() => {
+      vi.advanceTimersByTime(50); // 还没到 100ms
+    });
+
+    unmount();
+
+    // 即使时间到了，也不应该再调用
+    act(() => {
+      vi.advanceTimersByTime(50);
+    });
+
+    expect(callback).toHaveBeenCalledTimes(1); // 只有 leading 那一次
+  });
+});
+```
+
+### 4. 关键点解析
+
+1.  **`fnRef` 的使用**：
+    *   这是 React Hooks 性能优化的一个经典模式。如果直接把 `fn` 放入 `useCallback` 的依赖数组，每次父组件重渲染导致 `fn` 引用变化，都会重置节流器。
+    *   通过 `fnRef.current = fn`，我们允许 `useCallback` 的依赖保持稳定（不依赖 `fn`），但在执行时永远调用最新的函数。
+
+2.  **`leading` 和 `trailing` 逻辑**：
+    *   这是标准节流器的配置。
+    *   `leading`: 响应第一次点击（如按钮提交），防止用户感到卡顿。
+    *   `trailing`: 确保最后一次操作被捕获（如窗口 Resize 结束后的最终状态），这对于 UI 体验至关重要。
+
+3.  **测试库选择**：
+    *   `vi.useFakeTimers()` 是测试时间相关逻辑的神器，它让我们不用真的等待 300ms，使测试可以在毫秒级完成。
+
+这个实现既保证了性能（不会因外部函数变化而重置节流状态），又保证了正确性（没有闭包陷阱），非常适合 2025 年的现代 React 项目。
