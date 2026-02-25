@@ -1,0 +1,68 @@
+基于 OpenClaw 的最佳实践（重点关注知识库实时性与 WebSocket 连接稳定性），以下是一份简短的云端 Worker 配置指南。
+
+### OpenClaw 云端 Worker 配置指南
+
+本指南旨在确保云端 Worker 能够高效同步知识库数据，并通过 WSS 保持稳定的控制通道。
+
+#### 1. 核心环境变量配置
+在云端部署 Worker 时，请务必在环境变量中设置以下关键参数，以确保能够正确连接到 OpenClaw 的控制平面。
+
+*   **`OPENCLAW_API_URL`**: 设置为 OpenClaw 服务端的 API 地址（例如：`https://api.openclaw.io`）。
+*   **`OPENCLAW_TOKEN`**: 用于身份验证的 API Key 或 Token。
+*   **`WORKER_ID`**: （可选）自定义 Worker 标识符，用于在控制台区分不同的云端节点。
+
+#### 2. WSS (WebSocket Secure) 连接配置
+为了确保指令下发和状态上报的实时性，Worker 必须通过 WSS 与控制中心建立长连接。
+
+*   **协议选择**: 必须使用 `wss://` (WebSocket Secure) 以确保传输加密。
+*   **心跳保活**:
+    *   配置 Worker 每 **30秒** 发送一次 `PING` 帧。
+    *   若超过 **90秒** 未收到 `PONG` 或任何数据，应视为连接断开并立即触发**指数退避重连机制**。
+    *   *最佳实践*: 在代码层面实现 `onDisconnect` 监听，自动重连并重新注册 Worker 状态。
+
+#### 3. 知识库 同步策略
+云端 Worker 通常需要依赖本地化的知识库文件（如向量数据库或 JSON 文件）来执行任务。遵循以下同步流程以避免脏读或锁定问题：
+
+1.  **启动时全量同步**: Worker 启动时，从 `OPENCLAW_API_URL` 拉取最新的知识库版本。
+2.  **增量更新监听**:
+    *   通过 WSS 通道订阅 `kb_update` 事件。
+    *   一旦收到更新指令，Worker 应在后台下载差异文件。
+3.  **热加载**:
+    *   不要在任务执行中进行文件写入。
+    *   下载完成后，校验文件哈希值。
+    *   校验通过后，原子性地替换旧文件并重载内存中的索引，确保正在运行的任务不受干扰。
+
+#### 4. 推荐配置代码片段 (伪代码)
+
+```javascript
+// 初始化 Worker
+const worker = new OpenClawWorker({
+  wssEndpoint: 'wss://hub.openclaw.io/worker',
+  token: process.env.OPENCLAW_TOKEN,
+  // 知识库配置
+  knowledgeBase: {
+    syncInterval: 'onEvent', // 事件驱动同步
+    storagePath: '/data/kb_cache'
+  },
+  // WSS 心跳配置
+  heartbeat: {
+    interval: 30000, // 30s
+    timeout: 90000   // 90s
+  }
+});
+
+// 监听知识库更新事件
+worker.on('kb_update', async (payload) => {
+  console.log(`收到知识库更新通知: Version ${payload.version}`);
+  await worker.syncKnowledgeBase(); // 执行后台同步
+  console.log('知识库已热重载');
+});
+
+// 启动
+worker.connect();
+```
+
+### 总结检查清单
+*   [ ] **WSS** 连接已配置为加密模式。
+*   [ ] **心跳** 机制已启用，防止连接被云厂商防火墙切断。
+*   [ ] **知识库** 同步设置为“后台下载 + 原子替换”模式。
