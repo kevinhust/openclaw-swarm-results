@@ -1,0 +1,17 @@
+根据提供的知识库内容，关于 VPS 上 OpenClaw Gateway 的关键配置要点总结如下：
+
+1.  **配置文件的位置：**
+    *   OpenClaw Gateway 的配置位于 VPS 上的 `~/.openclaw/openclaw.json` 文件中。
+    *   引用： "在 VPS 的 `~/.openclaw/openclaw.json` 中：" (Snippet 1)
+
+2.  **默认端口：**
+    *   OpenClaw Gateway 默认监听的端口是 `18789`。
+    *   引用： "openclaw-gateway (port 18789)" (Snippet 2)
+
+3.  **部署复杂度：**
+    *   OpenClaw Gateway 的部署被认为是整个配置过程中最复杂的部分，会遇到较多的问题。
+    *   引用： "## Phase 4：OpenClaw Gateway 部署（最复杂的部分） 这是整个配置过程中遇到坑最多的环节，记录关键流程供参考。" (Snippet 3)
+
+**关于“内存优化”、“bind 参数”和“control UI 处理”的具体配置细节：**
+
+尽管知识库提到了 `~/.openclaw/openclaw.json` 是配置文件的位置，但所提供的代码块内容为空。因此，知识库**没有提供**关于内存优化、具体的 `bind` 参数设置（除了默认端口 `18789` 外）以及 control UI 处理的详细配置信息。
