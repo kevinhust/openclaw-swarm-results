@@ -1,0 +1,14 @@
+Here is a simple "Hello, World!" function in Python:
+
+```python
+def say_hello():
+    print("Hello, World!")
+
+# To run the function, you need to call it:
+say_hello()
+```
+
+**Explanation:**
+1.  `def` defines the function named `say_hello`.
+2.  `print("Hello, World!")` is the code that runs inside the function.
+3.  `say_hello()` calls the function so it actually executes.
