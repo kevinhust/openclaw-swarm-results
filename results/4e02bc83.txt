@@ -1,0 +1,32 @@
+Here is a simple bash script to print "Hello, World!".
+
+### The Script (`hello.sh`)
+
+```bash
+#!/bin/bash
+
+echo "Hello, World!"
+```
+
+### How to create and run it:
+
+1.  **Create the file:**
+    Open your terminal and create a file named `hello.sh` using a text editor like `nano` or `vim`:
+    ```bash
+    nano hello.sh
+    ```
+
+2.  **Paste the code:**
+    Copy the code above and paste it into the file. Save and exit (in nano, press `Ctrl+X`, then `Y`, then `Enter`).
+
+3.  **Make it executable:**
+    You need to give the script permission to run:
+    ```bash
+    chmod +x hello.sh
+    ```
+
+4.  **Run the script:**
+    Execute it by typing:
+    ```bash
+    ./hello.sh
+    ```
