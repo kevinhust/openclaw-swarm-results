@@ -1,0 +1,45 @@
+It looks like you're looking for a checklist or a set of steps to verify that a "knowledge sync" process (synchronizing a knowledge base, database, or file system) has completed successfully.
+
+Here is a comprehensive list of verification tasks you can use to validate a sync process.
+
+### 1. Pre-Sync Baseline (Preparation)
+Before starting the sync, ensure you have a baseline to compare against.
+*   **Record Counts:** Record the total number of entries/documents in the source system.
+*   **Checksum/Hash:** If possible, generate a hash of the source data to ensure bit-perfect integrity.
+*   **"Canary" Files:** Insert a few test files/records with known values and timestamps into the source specifically to track their movement.
+
+### 2. Structural & Metadata Verification
+These tasks check if the *structure* of the data arrived correctly.
+*   **Count Matching:** Does the count in the destination match the source? (Account for filters/deletions if it's an incremental sync).
+*   **Schema Validation:** Did all fields map correctly? (e.g., did the "Last Updated" timestamp turn into a string or retain its DateTime format?)
+*   **Hierarchy Preservation:** Are folders, categories, or parent-child relationships intact?
+*   **Link Integrity:** Do hyperlinks or cross-references within the knowledge base still point to valid locations?
+
+### 3. Content Integrity Verification
+These tasks check if the *actual information* is correct.
+*   **Spot Sampling:** Randomly select 5-10 records and manually compare source vs. destination content.
+*   **Binary/File Comparison:** If syncing files, open a few images or PDFs to ensure they aren't corrupted.
+*   **Delta Verification:** If this was an incremental sync, verify that *only* the changed data was updated and that static data remained untouched.
+*   **Character Encoding:** Check for special characters (emojis, foreign language characters) to ensure no encoding corruption (e.g., UTF-8 vs. ASCII).
+
+### 4. Functional Verification
+Does the synced knowledge actually *work* in the destination?
+*   **Searchability:** Can you search for the newly synced documents and find them?
+*   **Permissions/Access Control:** Can the intended users access the data? (Ensure private data wasn't accidentally made public during the sync).
+*   **Application State:** If the sync requires a service restart or cache clear, has that been performed?
+
+### 5. Error Handling & Logging
+*   **Error Logs:** Scan the sync logs for "ERROR" or "WARN" status codes.
+*   **Exception Handling:** Verify how the system handled "bad" data (e.g., did it crash, or did it skip the bad record and continue?).
+*   **Notification:** Did the system send a success/failure notification to the relevant stakeholders?
+
+### Example Test Case Template
+If you are writing a test plan or a Jira ticket, you can use this format:
+
+| Test Case ID | Description | Expected Result | Status |
+| :--- | :--- | :--- | :--- |
+| **TC-001** | **Count Verification** | Destination count matches Source count (X records). | ⬜ Pass |
+| **TC-002** | **Content Accuracy** | Sample record ID #1234 contains exact text match. | ⬜ Pass |
+| **TC-003** | **Timestamp Update** | "Last Synced" metadata reflects current time. | ⬜ Pass |
+| **TC-004** | **Incremental Check** | Updating a record in Source reflects in Destination within [Time Limit]. | ⬜ Pass |
+| **TC-005** | **Deletion Propagation** | Deleting a record in Source removes it from Destination. | ⬜ Pass |
