@@ -1,0 +1,89 @@
+在 `swarm-results` 仓库中创建 `HEALTH.md` 文件的方案设计如下，内容为完整的 Markdown 格式：
+
+---
+
+# HEALTH.md - OpenClaw Swarm Worker 健康状态设计
+
+本文件旨在定义 OpenClaw Swarm Worker 的健康状态、监控端点说明及版本信息，以确保集群的稳定运行和及时故障发现。
+
+## 1) Worker 健康状态定义
+
+Worker 的健康状态将通过多个维度进行评估，旨在反映其是否能够正常接收、处理任务并存储结果。
+
+### 健康 (Healthy)
+
+一个 Worker 被定义为健康，当它满足以下所有条件：
+
+1.  **进程活跃 (Process Active):** Worker 进程正在运行且未崩溃。
+2.  **注册与响应 (Registered & Responsive):** Worker 成功注册到 Swarm 管理器，并能够响应管理器的指令或心跳检测。
+3.  **任务处理能力 (Task Processing Capability):**
+    *   能够从任务队列中获取任务。
+    *   能够成功执行任务，错误率低于预设阈值。
+    *   当前处理的任务数量未超过其最大并发任务限制。根据知识库中 `config.ini` 的配置细节，`max_tasks_per_worker = 100` 表示单个 Worker 最多可同时处理100个任务，健康 Worker 应该在此限制内有效运行。
+4.  **结果存储成功 (Result Storage Success):** 能够成功将处理结果存储到指定的云端结果仓库 `kevinhust/openclaw-swarm-results` 中。任何对该仓库的连接失败或写入错误都将影响健康状态。
+5.  **资源利用率 (Resource Utilization):** CPU、内存等系统资源利用率在可接受范围内，未出现资源耗尽或异常飙升。
+6.  **日志无关键错误 (No Critical Log Errors):** 根据 `config.ini` 中 `log_level = info` 的设定，Worker 的日志输出中不包含预定义的关键错误或异常信息。
+
+### 不健康 (Unhealthy)
+
+一个 Worker 被定义为不健康，当它出现以下任一情况：
+
+1.  Worker 进程停止运行或崩溃。
+2.  长时间未向 Swarm 管理器发送心跳或无法响应。
+3.  任务执行失败率持续高于预设阈值。
+4.  无法连接到 `kevinhust/openclaw-swarm-results` 仓库，导致结果无法存储。
+5.  资源（如 CPU、内存）利用率持续过高，影响系统稳定性。
+6.  被 Swarm 管理器检测到超过其最大任务处理能力且无法恢复，或因内部错误无法接受新任务。知识库中提及的 `max_workers = 10` 和 `min_workers = 1` 暗示了 Swarm 会管理 Worker 的数量，不健康的 Worker 可能会被替换或重启。
+
+## 2) 监控端点说明
+
+由于知识库中未直接提供监控端点的配置信息，我们设计一个标准的 HTTP GET 端点，供 Swarm 管理器或外部监控系统周期性探测 Worker 的健康状态。
+
+### Worker 级别健康端点 (Proposed)
+
+每个 Worker 实例应暴露一个 HTTP 端点，例如：
+
+*   **URL:** `http://<worker_ip>:<worker_port>/health`
+*   **方法:** `GET`
+*   **响应:**
+    *   **200 OK:** Worker 处于健康状态。
+        *   **内容 (JSON):** 包含详细的健康信息，例如：
+            ```json
+            {
+              "status": "Healthy",
+              "uptime": "1d 5h 30m",
+              "tasks_processed_current": 5,
+              "tasks_processed_total": 1234,
+              "task_failure_rate": "0.5%",
+              "cpu_usage": "30%",
+              "memory_usage": "60%",
+              "last_result_storage_success": "2023-10-27T10:00:00Z",
+              "version": "v1.0.0-git-abcdef123"
+            }
+            ```
+    *   **503 Service Unavailable:** Worker 处于不健康状态。
+        *   **内容 (JSON):** 包含不健康的具体原因。
+            ```json
+            {
+              "status": "Unhealthy",
+              "reason": "Failed to connect to result storage",
+              "details": "Error: Git push failed due to network issue."
+            }
+            ```
+
+这个端点将允许 Swarm 管理器或 Prometheus 等监控系统，以设定的频率（例如每 30 秒）检查每个 Worker 的健康状况。
+
+## 3) 当前版本信息
+
+为了确保可追溯性和故障排查，每个 Worker 实例应在其健康状态报告中包含当前运行的版本信息。
+
+由于知识库中未直接提供 OpenClaw Swarm 的版本号，我们假设版本信息将通过以下方式获取并体现在健康报告中：
+
+*   **Git Commit Hash:** 最直接且最精确的版本标识符是 Worker 部署时的 Git commit hash。这能确保每次部署都是可重现的。
+    *   例如：`v1.0.0-git-abcdef123`
+*   **语义化版本 (Semantic Versioning):** 如果项目采用语义化版本（如 `v1.0.0`），则应优先显示此版本号。
+*   **构建时间戳 (Build Timestamp):** 作为补充信息，可以包含 Worker 镜像或服务构建的时间戳。
+
+这个版本信息将嵌入到上述 `/health` 端点的 JSON 响应中，帮助运维人员快速识别和关联 Worker 的代码版本与发现的问题。
+
+---
